@@ -33,10 +33,13 @@ class Robot:
             传感器
         belief_map: np.ndarray
             机器人自己的地图
+        position_history: np.ndarray
+            机器人位置历史
         '''
         self.position = None
         self.belief_map = None
-        self.lidar = Lidar()        
+        self.lidar = Lidar()
+        self.position_history = np.zeros((0, 2))  # 初始化为空数组，但保持二维结构    
 
     def reset(self,
               robot_start_position:np.ndarray,
@@ -56,19 +59,17 @@ class Robot:
         belief_map: np.ndarray
             机器人自己的地图
         '''
-        # 初始化机器人位置和自己的地图
-        self.position = robot_start_position
-        self.belief_map=np.ones_like(global_map) * 127
-        # self.local_map = np.zeros(global_map.shape)
+        self.position = robot_start_position  # 初始化机器人位置
+        self.belief_map=np.ones_like(global_map) * 127  # 初始化机器人自己的地图
+        self.position_history = robot_start_position  # 初始化为空数组   
 
         # 更新机器人自己的地图
-        self.belief_map = self.update_belief_map(global_map)
-
-        return self.belief_map
+        self.update_belief_map(global_map)
     
+
     def update_belief_map(self,
                          global_map:np.ndarray
-                         )->np.ndarray:
+                         ):
         '''
         更新机器人自己的地图
 
@@ -80,9 +81,114 @@ class Robot:
         belief_map: np.ndarray
             机器人自己认知的地图
         '''
-        self.belief_map=self.lidar.scan(self.position,self.belief_map,global_map)
+        self.belief_map=self.lidar.scan(self.position,self.belief_map.copy(),global_map)
         
-        return self.belief_map
     
+    def move_by_angle_distance(self, 
+                               angle: float, 
+                               distance: float,
+                               ) -> np.ndarray:
+        """
+        根据角度和距离计算新的坐标位置
+        限制了移动距离不超过雷达探测范围
+        
+        参数:
+        angle: float
+            移动角度（弧度）[0, 2π]
+        distance: float
+            移动距离
+        
+        返回:
+        new_position: np.ndarray
+            新的坐标位置
+        """
+        # 将角度转换到[0, 2π]范围内
+        angle = angle % (2 * np.pi)
+
+        # 限制距离不超过雷达探测范围
+        distance = min(distance, self.lidar.lidar_range)
+        
+        # 计算x和y方向的位移
+        dx = distance * np.cos(angle)
+        dy = distance * np.sin(angle)
+        
+        # 计算新位置
+        new_position = np.round(self.position + np.array([dx, dy])).astype(int)
+        
+        return new_position
     
+    def move(self,
+             angle:float,
+             distance:float
+             )->None:
+        '''
+        移动机器人
+
+        参数:
+        angle: float
+            移动角度（弧度）[0, 2π]
+        distance: float
+            移动距离
+        '''
+        new_position = self.move_by_angle_distance(angle, distance)
+        # TODO: 检查是否在可通行区域, 如果不在, 则找到最近的边界点
+        end_position = self.find_nearest_boundary(new_position)
+        # TODO: 移动到边界点
+        self.position = end_position
+        self.position_history = np.vstack((self.position_history, end_position))
+    
+    def find_nearest_boundary(self,
+                             position: np.ndarray,  
+                             ) -> np.ndarray:
+        """
+        找到最近的边界点
+
+        限制了移动距离不超过雷达探测范围
+        因此本函数使用belief_map来判断是否在可通行区域
+        
+        参数:
+        position: np.ndarray
+            目标位置
+        
+        返回:
+        end_position: np.ndarray
+            最近的边界点
+        """
+        # 获取起点和终点坐标
+        x0, y0 = self.position
+        x1, y1 = position
+        
+        # 计算方向向量
+        dx = abs(x1 - x0)
+        dy = abs(y1 - y0)
+        x_inc = 1 if x1 > x0 else -1
+        y_inc = 1 if y1 > y0 else -1
+        
+        # 初始化误差
+        error = dx - dy
+        
+        # 当前点
+        x, y = x0, y0
+        
+        # 检查连线上的每个点
+        while True:
+            # 检查当前点是否在地图范围内
+            if 0 <= x < self.belief_map.shape[1] and 0 <= y < self.belief_map.shape[0]:
+                # 如果遇到障碍物
+                if self.belief_map[y, x] == 1:
+                    # 返回上一个可通行的点
+                    return np.array([x - x_inc, y - y_inc])
+            
+            # 如果到达终点
+            if x == x1 and y == y1:
+                return position
+            
+            # 更新误差和位置
+            if error > 0:
+                x += x_inc
+                error -= dy
+            else:
+                y += y_inc
+                error += dx
+        
         
