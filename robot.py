@@ -135,15 +135,20 @@ class Robot:
 
         参数:
         angle: float
-            移动角度（弧度）[0, 2π]
+            移动角度（弧度）[0, 2π)
+            0: right
+            π/2: down
+            π: left
+            3π/2: up
         distance: float
             移动距离
         '''
         # 计算新的位置
         new_position = self.move_by_angle_distance(angle, distance)
-        # TODO: 检查是否在可通行区域, 如果不在, 则找到最近的边界点
+        # 检查是否在可通行区域, 如果不在, 则找到最近的边界点
+        # TODO: 考虑机器人自身的半径, 不要撞到障碍物
         end_position = self.find_nearest_boundary(new_position)
-        # TODO: 移动到边界点
+        # 移动到本次移动的终点
         self.position = end_position
         self.position_history = np.vstack((self.position_history, end_position))
     

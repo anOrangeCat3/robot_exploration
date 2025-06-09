@@ -2,7 +2,7 @@ import numpy as np
 from skimage import io
 from typing import Tuple
 
-from parameters import EXPLORATION_RATE_THRESHOLD,EXPLORATION_MAX_STEP,ALPHA
+from parameters import EXPLORATION_RATE_THRESHOLD,EXPLORATION_MAX_STEP,ALPHA,BETA
 from robot import Robot
 from map import Map
 
@@ -92,7 +92,7 @@ class Env:
         return terminated,truncated
         
         
-    def calculate_reward(self,done:bool)->float:
+    def calculate_reward(self)->float:
         '''计算奖励'''
         # 更新探索率
         explored_rate_change=self.update_explored_rate()
@@ -105,7 +105,8 @@ class Env:
             reward = 0
         elif truncated:
             # 步数超过限制, 惩罚50
-            reward = -50
+            # 但是探索率如果较大，则惩罚减少
+            reward = -50 + self.explored_rate * BETA
         else:
             # 正常移动，基础惩罚，但探索率提升可减少惩罚
             # 这样即使探索率提升很大，reward 也不会变为正数。

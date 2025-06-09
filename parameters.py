@@ -13,4 +13,5 @@ EXPLORATION_MAX_STEP = 1000  # 最大步数
 
 # 奖励(惩罚)参数
 ALPHA = 4  # 探索惩罚系数
+BETA = 20  # 探索率惩罚系数
 
