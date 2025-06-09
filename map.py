@@ -25,6 +25,7 @@ class Map:
         '''
         self.map_path = map_path
         self.global_map, self.robot_start_position = self.map_setup()
+        self.all_passable_area = self.calculate_all_passable_area()
 
 
     def map_setup(self)->Tuple[np.ndarray, np.ndarray]:
@@ -53,3 +54,9 @@ class Map:
         global_map = global_map * 254 + 1   
         
         return global_map, robot_location
+    
+    def calculate_all_passable_area(self)->np.ndarray:
+        '''
+        计算所有可通行区域
+        '''
+        return np.sum(self.global_map == 255)

@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Tuple
 
+from parameters import ROBOT_RADIUS
 from sensor import Lidar
 
 
@@ -36,10 +37,12 @@ class Robot:
         position_history: np.ndarray
             机器人位置历史
         '''
+        self.radius = ROBOT_RADIUS
         self.position = None
         self.belief_map = None
         self.lidar = Lidar()
-        self.position_history = np.zeros((0, 2))  # 初始化为空数组，但保持二维结构    
+        self.position_history = np.zeros((0, 2))  # 初始化为空数组，但保持二维结构
+        self.explored_area = 0
 
     def reset(self,
               robot_start_position:np.ndarray,
@@ -60,11 +63,13 @@ class Robot:
             机器人自己的地图
         '''
         self.position = robot_start_position  # 初始化机器人位置
-        self.belief_map=np.ones_like(global_map) * 127  # 初始化机器人自己的地图
+        self.belief_map=np.ones_like(global_map) * 127  # 初始化机器人自己的地图, 127为未知区域
         self.position_history = robot_start_position  # 初始化为空数组   
 
         # 更新机器人自己的地图
         self.update_belief_map(global_map)
+
+        return self.belief_map.copy()
     
 
     def update_belief_map(self,
@@ -81,8 +86,12 @@ class Robot:
         belief_map: np.ndarray
             机器人自己认知的地图
         '''
+        # lidar扫描, 获取新信息, 更新belief_map
         self.belief_map=self.lidar.scan(self.position,self.belief_map.copy(),global_map)
-        
+        # 计算已经探索区域
+        self.explored_area = self.calculate_explored_area()
+
+        return self.belief_map.copy()
     
     def move_by_angle_distance(self, 
                                angle: float, 
@@ -130,6 +139,7 @@ class Robot:
         distance: float
             移动距离
         '''
+        # 计算新的位置
         new_position = self.move_by_angle_distance(angle, distance)
         # TODO: 检查是否在可通行区域, 如果不在, 则找到最近的边界点
         end_position = self.find_nearest_boundary(new_position)
@@ -190,5 +200,16 @@ class Robot:
             else:
                 y += y_inc
                 error += dx
+
+    def calculate_explored_area(self,
+                               )->np.ndarray:
+        '''
+        计算已经探索区域
+
+        return:
+        explored_area: np.ndarray
+            已经探索区域面积
+        '''
+        return np.sum(self.belief_map == 255)
         
         

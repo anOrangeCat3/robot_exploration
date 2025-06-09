@@ -1,7 +1,6 @@
 import numpy as np
 
-LIDAR_RANGE = 80
-LIDAR_ANGLE_STEP = 0.5 / 180 * np.pi  # 0.5度的角度增量
+from parameters import LIDAR_RANGE, LIDAR_ANGLE_STEP
 
 class Lidar:
     '''
