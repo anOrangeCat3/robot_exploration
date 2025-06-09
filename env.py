@@ -2,6 +2,7 @@ import numpy as np
 from skimage import io
 from typing import Tuple
 
+from parameters import EXPLORATION_RATE_THRESHOLD,EXPLORATION_MAX_STEP,ALPHA
 from robot import Robot
 from map import Map
 
@@ -13,9 +14,7 @@ class Env:
     包含：
     map: 地图类
     robot: 机器人类
-    
     '''
-
     def __init__(self,
                  robot:Robot,
                  map:Map,
@@ -32,6 +31,7 @@ class Env:
         self.robot = robot
         self.map = map
         self.explored_rate = 0
+        self.step_count = 0
         
 
     def reset(self,)->np.ndarray:
@@ -44,6 +44,8 @@ class Env:
         '''
         # 更新机器人自己的地图
         robot_belief_map = self.robot.reset(self.map.robot_start_position, self.map.global_map)
+        # 更新探索率
+        self.update_explored_rate()
         # 加上机器人自己的位置
         obs= self.mark_robot_position(robot_belief_map)
 
@@ -66,9 +68,9 @@ class Env:
             奖励
         done: bool
             是否结束
-        info: dict
-            信息
         '''
+        # 更新步数
+        self.step_count += 1
         # 机器人移动
         self.robot.move(action[0], action[1])
         # 更新机器人自己的belief_map
@@ -76,16 +78,49 @@ class Env:
         # 加上机器人自己的位置
         obs = self.mark_robot_position(robot_belief_map)
         # TODO: 设计奖励
-        # reward = 
-        # TODO: 设计是否结束
-        # done = 
-        return obs
+        reward,done = self.calculate_reward()
+        
+        return obs,reward,done
+    
+    def calculate_terminated_truncated(self,)->bool:
+        '''判断是否结束'''
+        # 根据探索率判断是否结束
+        terminated = self.explored_rate >= EXPLORATION_RATE_THRESHOLD
+        # 达到步数上限结束
+        truncated = self.step_count >= EXPLORATION_MAX_STEP
+
+        return terminated,truncated
+        
+        
+    def calculate_reward(self,done:bool)->float:
+        '''计算奖励'''
+        # 更新探索率
+        explored_rate_change=self.update_explored_rate()
+        # 判断是否结束
+        terminated,truncated = self.calculate_terminated_truncated()
+        done = terminated or truncated
+        # 计算奖励
+        if terminated:
+            # 完成探索，不奖励也不惩罚
+            reward = 0
+        elif truncated:
+            # 步数超过限制, 惩罚50
+            reward = -50
+        else:
+            # 正常移动，基础惩罚，但探索率提升可减少惩罚
+            # 这样即使探索率提升很大，reward 也不会变为正数。
+            # 可以避免探索率很高时，reward很高，导致训练不稳定。
+            reward = min(0, -1 + explored_rate_change * ALPHA)
+
+        return reward,done
+
 
     def mark_robot_position(self, robot_belief_map):
         height, width = robot_belief_map.shape
 
         # 假设 self.robot.position 是 (x, y)
         pos_x, pos_y = self.robot.position
+        # 因为numpy默认的坐标原点和图像的坐标原点不一样，所以需要转换
         center_y = int(pos_y)
         center_x = int(pos_x)
         center_y = np.clip(center_y, 0, height-1)
@@ -95,4 +130,15 @@ class Env:
         distances = np.sqrt((y_coords - center_y)**2 + (x_coords - center_x)**2)
         circle_mask = distances <= self.robot.radius
         robot_belief_map[circle_mask] = 1
+
         return robot_belief_map
+    
+    def update_explored_rate(self)->np.ndarray:
+        '''
+        更新探索率
+        '''
+        old_explored_rate = self.explored_rate
+        self.explored_rate = self.robot.explored_area / self.map.all_passable_area
+        explored_rate_change = self.explored_rate - old_explored_rate
+        
+        return explored_rate_change
