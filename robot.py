@@ -152,53 +152,49 @@ class Robot:
         self.position = end_position
         self.position_history = np.vstack((self.position_history, end_position))
     
-    def find_nearest_boundary(self,
-                             position: np.ndarray,  
-                             ) -> np.ndarray:
+    def find_nearest_boundary(self, position: np.ndarray) -> np.ndarray:
         """
-        找到最近的边界点
-
-        限制了移动距离不超过雷达探测范围
-        因此本函数使用belief_map来判断是否在可通行区域
-        
-        参数:
-        position: np.ndarray
-            目标位置
-        
-        返回:
-        end_position: np.ndarray
-            最近的边界点
+        Bresenham算法思想
+        找到最近的边界点，考虑机器人自身的半径，且只在雷达范围内检查障碍物
         """
-        # 获取起点和终点坐标
         x0, y0 = self.position
         x1, y1 = position
-        
-        # 计算方向向量
+
         dx = abs(x1 - x0)
         dy = abs(y1 - y0)
         x_inc = 1 if x1 > x0 else -1
         y_inc = 1 if y1 > y0 else -1
-        
-        # 初始化误差
         error = dx - dy
-        
-        # 当前点
         x, y = x0, y0
-        
-        # 检查连线上的每个点
+
+        def is_safe(px, py):
+            h, w = self.belief_map.shape
+            r = self.lidar.lidar_range  # 只检查雷达范围内
+
+            y_min = max(0, py - r)
+            y_max = min(h, py + r + 1)
+            x_min = max(0, px - r)
+            x_max = min(w, px + r + 1)
+
+            yy, xx = np.ogrid[y_min:y_max, x_min:x_max]
+            mask = (xx - px) ** 2 + (yy - py) ** 2 <= self.radius ** 2  # 机器人本体半径
+            local_map = self.belief_map[y_min:y_max, x_min:x_max]
+            return not np.any(local_map[mask] == 1)
+
+        last_safe = np.array([x, y])
+
         while True:
-            # 检查当前点是否在地图范围内
             if 0 <= x < self.belief_map.shape[1] and 0 <= y < self.belief_map.shape[0]:
-                # 如果遇到障碍物
-                if self.belief_map[y, x] == 1:
-                    # 返回上一个可通行的点
-                    return np.array([x - x_inc, y - y_inc])
-            
-            # 如果到达终点
+                if is_safe(x, y):
+                    last_safe = np.array([x, y])
+                else:
+                    return last_safe
+            else:
+                return last_safe
+
             if x == x1 and y == y1:
-                return position
-            
-            # 更新误差和位置
+                return last_safe
+
             if error > 0:
                 x += x_inc
                 error -= dy
