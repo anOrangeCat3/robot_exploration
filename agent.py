@@ -79,15 +79,15 @@ class PPO_Agent():
 
         return:
             action: np.ndarray, shape: (action_dim,)
-            log_prob: np.ndarray, shape: (1,)
         '''
         obs = torch.tensor(obs, dtype = torch.float32).to(self.device)  # shape: (1, obs_dim)
         mu, std = self.network.pi(obs)  # shape: (1, action_dim)
         dist = torch.distributions.Normal(mu, std)
         action = dist.sample()  # shape: (1, action_dim)
-        log_prob = dist.log_prob(action).sum(dim=-1)  # 在最后一个维度上求和
+        # 执行过程，非训练，不需要计算log_prob
+        # log_prob = dist.log_prob(action).sum(dim=-1)  # 在最后一个维度上求和
         
-        return action[0], log_prob[0]  # shape: (action_dim,), (1,)
+        return action[0]  # shape: (action_dim,)
     
     def train(self)->None:
         '''

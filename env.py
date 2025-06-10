@@ -53,7 +53,7 @@ class Env:
     
     def step(self,
              action:Tuple[float, float]
-             )->Tuple[np.ndarray, float, bool, dict]:
+             )->Tuple[np.ndarray, float, bool]:
         '''
         执行一步动作
 
