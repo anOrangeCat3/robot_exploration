@@ -9,8 +9,8 @@ from parameters import LEARNING_RATE, GAMMA, BATCH_SIZE, TRAIN_EPOCHS, ADVANTAGE
 class Episode_Recorder():
     def __init__(self,
                  device:torch.device) -> None:
-        self.reset()
         self.device = device
+        self.reset()
 
     def reset(self):
         """ Clear the trajectory when begin a new episode."""
@@ -31,16 +31,13 @@ class Episode_Recorder():
         '''
         Append one step to the trajectory of current episode.
         '''
-        obs = torch.tensor(np.array([obs]), 
-                           dtype = torch.float32).to(self.device)
-        action = torch.tensor(np.array([action]), 
-                              dtype = torch.float32).to(self.device)
-        reward = torch.tensor(np.array([[reward]]), 
-                              dtype = torch.float32).to(self.device)
-        next_obs = torch.tensor(np.array([next_obs]), 
-                                dtype = torch.float32).to(self.device)
-        done = torch.tensor(np.array([[done]]), 
-                            dtype = torch.float32).to(self.device)
+        # 确保观察值是2D的 [H, W]
+        obs = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, H, W]
+        action = torch.tensor(action, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, action_dim]
+        reward = torch.tensor([[reward]], dtype=torch.float32).to(self.device)  # [1, 1]
+        next_obs = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, H, W]
+        done = torch.tensor([[done]], dtype=torch.float32).to(self.device)  # [1, 1]
+        
         self.trajectory["obs"] = torch.cat((self.trajectory["obs"], obs))
         self.trajectory["action"] = torch.cat((self.trajectory["action"], action))
         self.trajectory["reward"] = torch.cat((self.trajectory["reward"], reward))
@@ -58,11 +55,11 @@ class Episode_Recorder():
 
 class PPO_Agent():
     def __init__(self,
-                 obs_dim:int,
+                 obs_dim:Tuple[int, int],
                  action_dim:int,
                  device:torch.device
                  ) -> None:
-        self.network = PPO_Network(obs_dim, action_dim)
+        self.network = PPO_Network(obs_dim=obs_dim, action_dim=action_dim)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LEARNING_RATE)
         self.episode_recorder = Episode_Recorder(device)
         self.gamma = GAMMA
@@ -87,7 +84,7 @@ class PPO_Agent():
         # 执行过程，非训练，不需要计算log_prob
         # log_prob = dist.log_prob(action).sum(dim=-1)  # 在最后一个维度上求和
         
-        return action[0]  # shape: (action_dim,)
+        return action[0].cpu().numpy()  # shape: (action_dim,)
     
     def train(self)->None:
         '''

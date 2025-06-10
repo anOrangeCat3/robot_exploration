@@ -1,55 +1,140 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import Tuple
+
 class PPO_Network(nn.Module):
     def __init__(self,
-                 num_inputs:int,
-                 action_dim:int,
+                 obs_dim:Tuple[int, int],  # 地图大小，用于计算卷积后的特征图大小
+                 action_dim:int,          # 动作空间大小
+                 num_inputs:int=1,        # 灰度图，单通道
+                 device:torch.device=torch.device("cuda"),  # 默认使用cuda
                  ) -> None:
         super(PPO_Network, self).__init__()
-        self.conv1 = nn.Conv2d(num_inputs, 32, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
-        self.linear = nn.Linear(32 * 6 * 6, 512)
         
-        # 修改策略网络输出层，输出均值和标准差
-        self.fc_mu = nn.Linear(512, action_dim)
-        self.fc_std = nn.Linear(512, action_dim) # 可学习的标准差参数
+        # 计算卷积后的特征图大小
+        self._calculate_conv_output_size(obs_dim)
         
-        # 价值网络输出层
-        self.fc_v= nn.Linear(512, 1)
+        # 特征提取网络
+        self.conv_layers = nn.Sequential(
+            # 第一层卷积：提取基本特征
+            nn.Conv2d(num_inputs, 32, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            
+            # 第二层卷积：提取更复杂的特征
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            
+            # 第三层卷积：提取高级特征
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+            
+            # 第四层卷积：进一步提取特征
+            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(),
+        )
+        
+        # 全连接层
+        self.fc = nn.Sequential(
+            nn.Linear(self.conv_output_size, 512),
+            nn.ReLU(),
+            nn.Dropout(0.2)  # 添加dropout防止过拟合
+        )
+        
+        # 策略网络输出层（Actor）
+        self.fc_mu = nn.Linear(512, action_dim)  # 输出动作均值
+        self.fc_std = nn.Linear(512, action_dim)  # 输出动作标准差
+        
+        # 价值网络输出层（Critic）
+        self.fc_v = nn.Linear(512, 1)  # 输出状态价值
+        
+        # 初始化权重
+        self._init_weights()
+
+        # 将网络移动到指定设备
+        self.to(device)
+    
+    def _calculate_conv_output_size(self, obs_dim: Tuple[int, int]):
+        """计算卷积后的特征图大小"""
+        height, width = obs_dim
+        # 经过4次stride=2的卷积，特征图大小会缩小16倍
+        conv_height = height // 16
+        conv_width = width // 16
+        self.conv_output_size = 256 * conv_height * conv_width
+        # print(f"输入地图大小: {obs_dim}")
+        # print(f"卷积后特征图大小: {conv_height}x{conv_width}")
+        # print(f"展平后特征维度: {self.conv_output_size}")
+    
+    def _init_weights(self):
+        """初始化网络权重"""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
     
     def _extract_features(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = self.linear(x.view(x.size(0), -1))
+        """
+        提取特征
+        Args:
+            x: 输入状态，shape (batch_size, channels, height, width)
+        Returns:
+            features: 提取的特征，shape (batch_size, 512)
+        """
+        # 打印输入维度
+        # print(f"特征提取输入维度: {x.shape}")
+        
+        # 确保输入是4D张量
+        if len(x.shape) == 2:  # [H, W]
+            x = x.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
+        elif len(x.shape) == 3:  # [C, H, W]
+            x = x.unsqueeze(0)  # [1, C, H, W]
+        
+        # 通过卷积层
+        x = self.conv_layers(x)
+        # print(f"卷积后特征维度: {x.shape}")
+        
+        # 展平
+        x = x.view(x.size(0), -1)
+        # print(f"展平后特征维度: {x.shape}")
+        
+        # 通过全连接层
+        x = self.fc(x)
+        # print(f"全连接层后特征维度: {x.shape}")
+        
         return x
     
     def pi(self, x):
         """
-        Actor network (Policy network)
+        策略网络(Actor)
         Args:
-            x: input state
+            x: 输入状态
         Returns:
             action_mean: 动作均值
             action_std: 动作标准差
         """
         features = self._extract_features(x)
         action_mean = self.fc_mu(features)
-        # 使用softplus替代exp，确保标准差非负且更稳定
-        action_std = F.softplus(self.fc_std(features))
+        # 使用softplus确保标准差为正
+        action_std = F.softplus(self.fc_std(features)) + 1e-5
+        # print(f"动作均值维度: {action_mean.shape}")
+        # print(f"动作标准差维度: {action_std.shape}")
         return action_mean, action_std
     
     def v(self, x):
         """
-        Critic network (Value network)
+        价值网络(Critic)
         Args:
-            x: input state
+            x: 输入状态
         Returns:
-            value
+            value: 状态价值
         """
         features = self._extract_features(x)
-        return self.fc_v(features)
+        value = self.fc_v(features)
+        print(f"状态价值维度: {value.shape}")
+        return value

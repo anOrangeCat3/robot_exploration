@@ -1,4 +1,5 @@
 # robot_exploratioin
 
 ## Requirements
-- Python 3.8
+- python 3.10
+- torch 2.7.1+cu128

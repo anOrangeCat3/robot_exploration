@@ -61,7 +61,7 @@ class Lidar:
         max_collision = 10
 
         while 0 <= x < ground_truth.shape[1] and 0 <= y < ground_truth.shape[0]:
-            k = ground_truth.item(y, x)
+            k = ground_truth[y, x]
             if k == 1 and collision_flag < max_collision:
                 collision_flag += 1
                 if collision_flag >= max_collision:
@@ -73,7 +73,7 @@ class Lidar:
             if x == x1 and y == y1:
                 break
 
-            robot_belief_map.itemset((y, x), k)
+            robot_belief_map[y, x] = k
 
             if error > 0:
                 x += x_inc

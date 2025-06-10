@@ -1,4 +1,5 @@
 import copy
+import torch
 
 from robot import Robot
 from map import Map
@@ -82,6 +83,19 @@ if __name__ == "__main__":
     robot = Robot()
     map = Map('maps/map1.png')
     env = Env(robot, map)
-    agent = PPO_Agent()
+
+    # 获取观察空间和动作空间的维度
+    obs_dim = map.global_map.shape  # 获取地图的实际尺寸 (height, width)
+    action_dim = 2  # 角度和距离
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 初始化智能体
+    agent = PPO_Agent(
+        obs_dim=obs_dim,
+        action_dim=action_dim,
+        device=device
+    )
+    
+    # 初始化训练管理器
     train_manager = TrainManager(env, agent)
     train_manager.train()
