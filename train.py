@@ -1,9 +1,14 @@
+import copy
+
 from env import Env
+from agent import PPO_Agent
+from parameters import TRAIN_EPISODE_NUM, EVAL_INTERVAL
 
 class TrainManager():
     def __init__(self,
                  env:Env,
-                 episode_num:int,
+                 agent:PPO_Agent,
+                 episode_num:int=TRAIN_EPISODE_NUM,
                  ) -> None:
         '''
         初始化训练管理类
@@ -16,6 +21,8 @@ class TrainManager():
             训练轮数
         '''
         self.train_env = env
+        self.eval_env = copy.deepcopy(env)
+        self.agent = agent
         self.episode_num = episode_num
 
     def train(self,)->None:
@@ -42,8 +49,8 @@ class TrainManager():
             next_obs, reward, _ = self.train_env.step(action)
             # next_obs, reward, terminated, truncated, info = self.train_env.step(action)
             # 更新策略
-            # TODO: 完成 Agent.train_policy()
-            self.agent.train_policy(obs,action,reward,next_obs,done)
+            # TODO: 完成 Agent.train()
+            self.agent.train()
             obs = next_obs
 
 

@@ -156,6 +156,14 @@ class Robot:
         """
         Bresenham算法思想
         找到最近的边界点，考虑机器人自身的半径，且只在雷达范围内检查障碍物
+
+        参数:
+        position: np.ndarray
+            当前位置
+
+        返回:
+        last_safe: np.ndarray
+            最近的边界点(考虑到机器人自身半径, 不会与墙壁碰撞)
         """
         x0, y0 = self.position
         x1, y1 = position

@@ -1,2 +1,190 @@
+import torch
+import torch.nn.functional as F
+import numpy as np
+from typing import Tuple
 
+from network import PPO_Network
+from parameters import LEARNING_RATE, GAMMA, BATCH_SIZE, TRAIN_EPOCHS, ADVANTAGE_LAMBDA, CLIP_EPSILON
+
+class Episode_Recorder():
+    def __init__(self,
+                 device:torch.device) -> None:
+        self.reset()
+        self.device = device
+
+    def reset(self):
+        """ Clear the trajectory when begin a new episode."""
+        self.trajectory = {
+            "obs": torch.tensor([], dtype = torch.float32).to(self.device),
+            "action": torch.tensor([], dtype = torch.float32).to(self.device),  # action_dim = 2
+            "reward": torch.tensor([], dtype = torch.float32).to(self.device),
+            "next_obs": torch.tensor([], dtype = torch.float32).to(self.device),
+            "done": torch.tensor([], dtype = torch.float32).to(self.device)
+        }
+    
+    def append(self,
+               obs:np.ndarray,
+               action:np.ndarray,
+               reward:float,
+               next_obs:np.ndarray,
+               done:bool):
+        '''
+        Append one step to the trajectory of current episode.
+        '''
+        obs = torch.tensor(np.array([obs]), 
+                           dtype = torch.float32).to(self.device)
+        action = torch.tensor(np.array([action]), 
+                              dtype = torch.float32).to(self.device)
+        reward = torch.tensor(np.array([[reward]]), 
+                              dtype = torch.float32).to(self.device)
+        next_obs = torch.tensor(np.array([next_obs]), 
+                                dtype = torch.float32).to(self.device)
+        done = torch.tensor(np.array([[done]]), 
+                            dtype = torch.float32).to(self.device)
+        self.trajectory["obs"] = torch.cat((self.trajectory["obs"], obs))
+        self.trajectory["action"] = torch.cat((self.trajectory["action"], action))
+        self.trajectory["reward"] = torch.cat((self.trajectory["reward"], reward))
+        self.trajectory["next_obs"] = torch.cat((self.trajectory["next_obs"], next_obs))
+        self.trajectory["done"] = torch.cat((self.trajectory["done"], done))
+        
+    def get_trajectory(self
+                       ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        '''
+        Get the trajectory of current episode.
+        '''
+        return self.trajectory["obs"], self.trajectory["action"], \
+            self.trajectory["reward"], self.trajectory["next_obs"], self.trajectory["done"]
+        
+
+class PPO_Agent():
+    def __init__(self,
+                 obs_dim:int,
+                 action_dim:int,
+                 device:torch.device
+                 ) -> None:
+        self.network = PPO_Network(obs_dim, action_dim)
+        self.optimizer = torch.optim.Adam(self.network.parameters(), lr=LEARNING_RATE)
+        self.episode_recorder = Episode_Recorder(device)
+        self.gamma = GAMMA
+        self.batch_size = BATCH_SIZE
+        self.train_epoches = TRAIN_EPOCHS
+        self.advantage_lambda = ADVANTAGE_LAMBDA
+        self.clip_epsilon = CLIP_EPSILON
+        self.device = device
+    
+    def get_action(self,
+                   obs:np.ndarray) -> Tuple[torch.tensor, torch.tensor]:
+        '''
+        Get the action from the network.
+
+        return:
+            action: np.ndarray, shape: (action_dim,)
+            log_prob: np.ndarray, shape: (1,)
+        '''
+        obs = torch.tensor(obs, dtype = torch.float32).to(self.device)  # shape: (1, obs_dim)
+        mu, std = self.network.pi(obs)  # shape: (1, action_dim)
+        dist = torch.distributions.Normal(mu, std)
+        action = dist.sample()  # shape: (1, action_dim)
+        log_prob = dist.log_prob(action).sum(dim=-1)  # 在最后一个维度上求和
+        
+        return action[0], log_prob[0]  # shape: (action_dim,), (1,)
+    
+    def train(self)->None:
+        '''
+        Train the network.
+        '''
+        obs, action, reward, next_obs, done = self.episode_recorder.get_trajectory()
+        # obs: (batch_size, obs_dim), 
+        # action: (batch_size, action_dim), 
+        # reward: (batch_size, 1), 
+        # next_obs: (batch_size, obs_dim), 
+        # done: (batch_size, 1)
+
+        # 1. TD_target = r + gamma * V(s')
+        with torch.no_grad():  # 不需要计算梯度
+            TD_target = reward + self.gamma * self.network.v(next_obs) * (1 - done)
+            TD_error = TD_target - self.network.v(obs)
+
+        # 2. Advantages GAE
+        advantage = self.compute_advantage(TD_error)
+
+        # 3. old_log_prob
+        with torch.no_grad():
+            old_log_prob = self.calculate_log_prob(obs, action).detach()
+
+        # 确保 batch_size 不超过数据量
+        batch_size = min(self.batch_size, obs.shape[0])
+
+        # 4. update the network by batch
+        for _ in range(self.train_epoches):
+            sample_indices = np.random.randint(low=0, 
+                                               high=obs.shape[0], 
+                                               size=batch_size)
+            critic_loss = torch.mean(F.mse_loss(TD_target[sample_indices].detach(), 
+                                                self.network.v(obs[sample_indices])))
+            
+            log_prob = self.calculate_log_prob(obs[sample_indices], action[sample_indices])
+            ratio = torch.exp(log_prob - old_log_prob[sample_indices])  # pi_theta/pi_theta_old
+            
+            surr1 = ratio * advantage[sample_indices]
+            surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantage[sample_indices]
+            actor_loss = -torch.mean(torch.min(surr1, surr2))
+
+            total_loss = actor_loss + critic_loss
+
+            self.optimizer.zero_grad()
+            total_loss.backward()
+            torch.nn.utils.clip_grad_norm_(self.network.parameters(),1.0)
+            self.optimizer.step()
+
+
+    def compute_advantage(self, TD_error:torch.tensor) -> torch.tensor:
+        '''
+        使用GAE计算优势函数
+        Args:
+            TD_error: torch.tensor, shape (batch_size, 1)
+                TD误差
+        Returns:
+            advantage: torch.tensor, shape (batch_size, 1)
+                计算得到的优势函数值
+        '''
+        # 初始化优势函数列表
+        advantage_list = []
+        advantage = torch.tensor(0.0, device=self.device)
+        
+        # 从后向前计算GAE
+        for delta in TD_error.flip(0):  # 使用flip代替[::-1]
+            # GAE计算公式：A_t = delta_t + gamma * lambda * A_{t+1}
+            advantage = self.gamma * self.advantage_lambda * advantage + delta
+            advantage_list.append(advantage)
+        
+        # 反转列表，恢复原始顺序
+        advantage_list.reverse()
+        
+        # 将列表转换为tensor
+        advantage = torch.cat(advantage_list)
+        
+        return advantage
+        
+    def calculate_log_prob(self,
+                           obs:torch.tensor,
+                           action:torch.tensor) -> torch.tensor:
+        '''
+        计算动作的对数概率
+        '''
+        mu, std = self.network.pi(obs)
+        
+        # 创建正态分布
+        dist = torch.distributions.Normal(mu, std)
+        
+        # 计算动作的对数概率
+        # 对于多维动作，需要对每个维度求和
+        log_prob = dist.log_prob(action).sum(dim=-1, keepdim=True)
+        
+        return log_prob
+    
+               
+    
+        
+    
 

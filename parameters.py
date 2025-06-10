@@ -15,3 +15,17 @@ EXPLORATION_MAX_STEP = 1000  # 最大步数
 ALPHA = 4  # 探索惩罚系数
 BETA = 20  # 探索率惩罚系数
 
+# 神经网络参数
+HIDDEN_DIM = 32
+
+# PPO参数
+LEARNING_RATE = 0.001
+GAMMA = 0.9  # 折扣因子
+BATCH_SIZE = 32
+TRAIN_EPOCHS = 10  # 每一局游戏训练次数
+ADVANTAGE_LAMBDA = 0.95
+CLIP_EPSILON = 0.2  # GAE参数
+
+# 训练参数
+TRAIN_EPISODE_NUM = 100  # 训练轮数
+EVAL_INTERVAL = 10  # 评估间隔
