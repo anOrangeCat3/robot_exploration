@@ -64,7 +64,8 @@ class Robot:
         '''
         self.position = robot_start_position  # 初始化机器人位置
         self.belief_map=np.ones_like(global_map) * 127  # 初始化机器人自己的地图, 127为未知区域
-        self.position_history = robot_start_position  # 初始化为空数组   
+        self.position_history = robot_start_position  # 初始化为空数组  
+        self.explored_area = 0
 
         # 更新机器人自己的地图
         self.update_belief_map(global_map)

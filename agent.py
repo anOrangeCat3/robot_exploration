@@ -6,7 +6,9 @@ from typing import Tuple
 from network import PPO_Network
 from parameters import LEARNING_RATE, GAMMA, BATCH_SIZE, TRAIN_EPOCHS, ADVANTAGE_LAMBDA, CLIP_EPSILON
 
-class Episode_Recorder():
+from debug_tools import check_nan
+
+class Episode_Recorder(): 
     def __init__(self,
                  device:torch.device) -> None:
         self.device = device
@@ -68,6 +70,8 @@ class PPO_Agent():
         self.advantage_lambda = ADVANTAGE_LAMBDA
         self.clip_epsilon = CLIP_EPSILON
         self.device = device
+
+        print(f"obs_dim: {obs_dim}, device: {device}")
     
     def get_action(self,
                    obs:np.ndarray) -> Tuple[torch.tensor, torch.tensor]:
@@ -91,16 +95,18 @@ class PPO_Agent():
         Train the network.
         '''
         obs, action, reward, next_obs, done = self.episode_recorder.get_trajectory()
-        # obs: (batch_size, obs_dim), 
+        # obs: (batch_size, H, W)
         # action: (batch_size, action_dim), 
         # reward: (batch_size, 1), 
-        # next_obs: (batch_size, obs_dim), 
+        # next_obs: (batch_size, H, W), 
         # done: (batch_size, 1)
 
         # 1. TD_target = r + gamma * V(s')
         with torch.no_grad():  # 不需要计算梯度
             TD_target = reward + self.gamma * self.network.v(next_obs) * (1 - done)
             TD_error = TD_target - self.network.v(obs)
+
+        check_nan(TD_error, "TD_error")
 
         # 2. Advantages GAE
         advantage = self.compute_advantage(TD_error)
@@ -117,12 +123,14 @@ class PPO_Agent():
             sample_indices = np.random.randint(low=0, 
                                                high=obs.shape[0], 
                                                size=batch_size)
+            # print(f"obs[sample_indices]: {obs[sample_indices].shape}")
             critic_loss = torch.mean(F.mse_loss(TD_target[sample_indices].detach(), 
                                                 self.network.v(obs[sample_indices])))
-            
+            check_nan(critic_loss, "critic_loss")
             log_prob = self.calculate_log_prob(obs[sample_indices], action[sample_indices])
             ratio = torch.exp(log_prob - old_log_prob[sample_indices])  # pi_theta/pi_theta_old
             
+            check_nan(ratio, "ratio")
             surr1 = ratio * advantage[sample_indices]
             surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantage[sample_indices]
             actor_loss = -torch.mean(torch.min(surr1, surr2))

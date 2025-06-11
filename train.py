@@ -64,7 +64,7 @@ class TrainManager():
             self.train_episode()
             if i % EVAL_INTERVAL == 0:
                 avg_reward = self.eval()
-                print(f"Episode {i}, Average Reward: {avg_reward}")
+                print(f"Episode {i}, Average Reward: {avg_reward}, Steps: {self.eval_env.step_count}")
 
     def eval(self)->None:
         obs = self.eval_env.reset()

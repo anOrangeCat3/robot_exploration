@@ -70,13 +70,17 @@ class PPO_Network(nn.Module):
         """初始化网络权重"""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.xavier_uniform_(m.weight, gain=0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.xavier_uniform_(m.weight, gain=0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+            # 特别初始化策略网络的标准差层
+            if isinstance(m, nn.Linear) and m == self.fc_std:
+                nn.init.constant_(m.weight, 0)
+                nn.init.constant_(m.bias, 0)
     
     def _extract_features(self, x):
         """
@@ -87,13 +91,13 @@ class PPO_Network(nn.Module):
             features: 提取的特征，shape (batch_size, 512)
         """
         # 打印输入维度
-        # print(f"特征提取输入维度: {x.shape}")
-        
-        # 确保输入是4D张量
-        if len(x.shape) == 2:  # [H, W]
-            x = x.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W]
-        elif len(x.shape) == 3:  # [C, H, W]
-            x = x.unsqueeze(0)  # [1, C, H, W]
+        # print(f"网络输入维度: {x.shape}")
+        if len(x.shape) == 2: 
+            # get_action时，输入维度为(H, W)
+            x = x.unsqueeze(0).unsqueeze(0)
+        elif len(x.shape) == 3:
+            # train时，输入维度为(batch_size, H, W)
+            x = x.unsqueeze(1)
         
         # 通过卷积层
         x = self.conv_layers(x)
@@ -120,8 +124,10 @@ class PPO_Network(nn.Module):
         """
         features = self._extract_features(x)
         action_mean = self.fc_mu(features)
-        # 使用softplus确保标准差为正
-        action_std = F.softplus(self.fc_std(features)) + 1e-5
+        # 使用更稳定的标准差计算方式
+        action_std = F.softplus(self.fc_std(features)) + 1e-6
+        action_std = torch.clamp(action_std, min=1e-6, max=1.0)  # 限制标准差范围
+        # action_std = F.softplus(self.fc_std(features)) + 1e-5
         # print(f"动作均值维度: {action_mean.shape}")
         # print(f"动作标准差维度: {action_std.shape}")
         return action_mean, action_std
@@ -134,7 +140,8 @@ class PPO_Network(nn.Module):
         Returns:
             value: 状态价值
         """
+        # print(f"价值网络输入维度: {x.shape}")
         features = self._extract_features(x)
         value = self.fc_v(features)
-        print(f"状态价值维度: {value.shape}")
+        # print(f"状态价值维度: {value.shape}")
         return value

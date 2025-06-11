@@ -43,6 +43,8 @@ class Env:
             机器人自己的地图
         '''
         # 更新机器人自己的地图
+        self.robot.explored_area = 0
+        self.step_count = 0
         robot_belief_map = self.robot.reset(self.map.robot_start_position, self.map.global_map)
         # 更新探索率
         self.update_explored_rate()
