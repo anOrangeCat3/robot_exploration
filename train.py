@@ -1,5 +1,6 @@
 import copy
 import torch
+import datetime
 
 from robot import Robot
 from map import Map
@@ -32,12 +33,8 @@ class TrainManager():
         self.episode_num = episode_num
         self.eval_iters = eval_iters
         self.best_reward = float('-inf')  # 初始化最佳奖励为负无穷
-
-    def train(self,)->None:
-        for _ in range(self.episode_num):
-            # TODO: 每一轮训练，记录一个episode的总reward用于评估
-            episode_reward = self.train_episode()
-            pass
+        self.train_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.reward_list = []
     
     def train_episode(self)->None:
         '''
@@ -66,6 +63,9 @@ class TrainManager():
             if i % EVAL_INTERVAL == 0:
                 avg_reward = self.eval()
                 print(f"Episode {i}, Average Reward: {avg_reward}, Steps: {self.eval_env.step_count}")
+                self.reward_list.append(avg_reward)
+        
+        return self.reward_list
 
     def eval(self)->None:
         obs = self.eval_env.reset()
@@ -81,15 +81,7 @@ class TrainManager():
         if test_reward > self.best_reward:
             self.best_reward = test_reward
             # 保存网络参数
-            torch.save({
-                'conv_layers': self.agent.actor.conv_layers.state_dict(),
-                'fc': self.agent.actor.fc.state_dict(),
-                'fc_mu': self.agent.actor.fc_mu.state_dict(),
-                'fc_std': self.agent.actor.fc_std.state_dict(),
-                'fc_v': self.agent.actor.fc_v.state_dict(),
-                'best_reward': self.best_reward
-            }, 'best_model.pth')
-            print(f"New best model saved! Reward: {self.best_reward:.2f}")
+            torch.save(self.agent.network.state_dict(), f'models/model_{self.train_time}.pth')
             print(f"New best model saved! Reward: {self.best_reward:.2f}")
             
         return test_reward
@@ -114,4 +106,5 @@ if __name__ == "__main__":
     
     # 初始化训练管理器
     train_manager = TrainManager(env, agent)
-    train_manager.train()
+    reward_list = train_manager.train()
+    print(reward_list)

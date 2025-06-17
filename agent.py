@@ -128,11 +128,11 @@ class PPO_Agent():
             # print(f"obs[sample_indices]: {obs[sample_indices].shape}")
             critic_loss = torch.mean(F.mse_loss(TD_target[sample_indices].detach(), 
                                                 self.network.v(obs[sample_indices])))
-            check_nan(critic_loss, "critic_loss")
+            # check_nan(critic_loss, "critic_loss")
             log_prob = self.calculate_log_prob(obs[sample_indices], action[sample_indices])
             ratio = torch.exp(log_prob - old_log_prob[sample_indices])  # pi_theta/pi_theta_old
             
-            check_nan(ratio, "ratio")
+            # check_nan(ratio, "ratio")
             surr1 = ratio * advantage[sample_indices]
             surr2 = torch.clamp(ratio, 1 - self.clip_epsilon, 1 + self.clip_epsilon) * advantage[sample_indices]
             actor_loss = -torch.mean(torch.min(surr1, surr2))

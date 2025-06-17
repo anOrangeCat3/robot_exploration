@@ -31,6 +31,7 @@ class Env:
         self.robot = robot
         self.map = map
         self.explored_rate = 0
+        self.explored_area = 0
         self.step_count = 0
         
 
@@ -47,7 +48,7 @@ class Env:
         self.step_count = 0
         robot_belief_map = self.robot.reset(self.map.robot_start_position, self.map.global_map)
         # 更新探索率
-        self.update_explored_rate()
+        self.update_explored_area()
         # 加上机器人自己的位置
         obs= self.mark_robot_position(robot_belief_map)
         # TODO: resize
@@ -101,23 +102,19 @@ class Env:
     def calculate_reward(self)->float:
         '''计算奖励'''
         # 更新探索率
-        explored_rate_change=self.update_explored_rate()
+        explored_area_change=self.update_explored_area()
+        print(f"explored_area_change: {explored_area_change}")
         # 判断是否结束
         terminated,truncated = self.calculate_terminated_truncated()
         done = terminated or truncated
         # 计算奖励
         if terminated:
-            # 完成探索，不奖励也不惩罚
-            reward = 0
-        elif truncated:
-            # 步数超过限制, 惩罚50
-            # 但是探索率如果较大，则惩罚减少
-            reward = -50 + self.explored_rate * BETA
+            # 完成探索,奖励10
+            reward =100
         else:
-            # 正常移动，基础惩罚，但探索率提升可减少惩罚
-            # 这样即使探索率提升很大，reward 也不会变为正数。
-            # 可以避免探索率很高时，reward很高，导致训练不稳定。
-            reward = min(0, -1 + explored_rate_change * ALPHA)
+            # 正常移动和超出步数限制奖励
+            # 每一步最大不超过1
+            reward= min(1, explored_area_change/100)
 
         return reward,done
 
@@ -141,12 +138,13 @@ class Env:
         return robot_belief_map
     
 
-    def update_explored_rate(self)->np.ndarray:
+    def update_explored_area(self)->np.ndarray:
         '''
-        更新探索率
+        更新探索面积
         '''
-        old_explored_rate = self.explored_rate
-        self.explored_rate = self.robot.explored_area / self.map.all_passable_area
-        explored_rate_change = self.explored_rate - old_explored_rate
+        old_explored_area = self.explored_area
+        self.explored_area = self.robot.explored_area
+        explored_area_change = self.explored_area - old_explored_area
+        self.explored_rate = self.explored_area / self.map.all_passable_area
         
-        return explored_rate_change
+        return explored_area_change
