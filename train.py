@@ -31,6 +31,7 @@ class TrainManager():
         self.agent = agent
         self.episode_num = episode_num
         self.eval_iters = eval_iters
+        self.best_reward = float('-inf')  # 初始化最佳奖励为负无穷
 
     def train(self,)->None:
         for _ in range(self.episode_num):
@@ -75,7 +76,22 @@ class TrainManager():
             next_obs, reward, done = self.eval_env.step(action)
             obs = next_obs
             test_reward += reward
-        
+
+        # 保存最佳模型
+        if test_reward > self.best_reward:
+            self.best_reward = test_reward
+            # 保存网络参数
+            torch.save({
+                'conv_layers': self.agent.actor.conv_layers.state_dict(),
+                'fc': self.agent.actor.fc.state_dict(),
+                'fc_mu': self.agent.actor.fc_mu.state_dict(),
+                'fc_std': self.agent.actor.fc_std.state_dict(),
+                'fc_v': self.agent.actor.fc_v.state_dict(),
+                'best_reward': self.best_reward
+            }, 'best_model.pth')
+            print(f"New best model saved! Reward: {self.best_reward:.2f}")
+            print(f"New best model saved! Reward: {self.best_reward:.2f}")
+            
         return test_reward
         
 

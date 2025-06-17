@@ -1,5 +1,5 @@
 import numpy as np
-from skimage import io
+from skimage.transform import resize
 from typing import Tuple
 
 from parameters import EXPLORATION_RATE_THRESHOLD,EXPLORATION_MAX_STEP,ALPHA,BETA
@@ -50,6 +50,8 @@ class Env:
         self.update_explored_rate()
         # 加上机器人自己的位置
         obs= self.mark_robot_position(robot_belief_map)
+        # TODO: resize
+        obs = resize(obs, (192, 256))
 
         return obs
     
@@ -79,6 +81,8 @@ class Env:
         robot_belief_map = self.robot.update_belief_map(self.map.global_map)
         # 加上机器人自己的位置
         obs = self.mark_robot_position(robot_belief_map)
+        # TODO: resize
+        obs = resize(obs, (192, 256))
         # TODO: 设计奖励
         reward,done = self.calculate_reward()
         
@@ -93,7 +97,7 @@ class Env:
 
         return terminated,truncated
         
-        
+
     def calculate_reward(self)->float:
         '''计算奖励'''
         # 更新探索率
@@ -136,6 +140,7 @@ class Env:
 
         return robot_belief_map
     
+
     def update_explored_rate(self)->np.ndarray:
         '''
         更新探索率

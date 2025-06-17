@@ -106,10 +106,12 @@ class PPO_Agent():
             TD_target = reward + self.gamma * self.network.v(next_obs) * (1 - done)
             TD_error = TD_target - self.network.v(obs)
 
-        check_nan(TD_error, "TD_error")
+        # check_nan(TD_error, "TD_error")
+        # print(f"TD_error: {TD_error}")
 
         # 2. Advantages GAE
         advantage = self.compute_advantage(TD_error)
+        # print(f"advantage: {advantage}")
 
         # 3. old_log_prob
         with torch.no_grad():

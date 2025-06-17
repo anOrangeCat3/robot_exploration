@@ -13,33 +13,21 @@ class PPO_Network(nn.Module):
                  ) -> None:
         super(PPO_Network, self).__init__()
         
-        # 计算卷积后的特征图大小
-        self._calculate_conv_output_size(obs_dim)
-        
         # 特征提取网络
         self.conv_layers = nn.Sequential(
-            # 第一层卷积：提取基本特征
-            nn.Conv2d(num_inputs, 32, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(num_inputs, 32, kernel_size=8, stride=4),  # (200-8)/4 + 1 = 49
             nn.ReLU(),
-            
-            # 第二层卷积：提取更复杂的特征
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),  # (49-4)/2 + 1 = 24
             nn.ReLU(),
-            
-            # 第三层卷积：提取高级特征
-            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            
-            # 第四层卷积：进一步提取特征
-            nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1),  # (24-3)/1 + 1 = 22
             nn.ReLU(),
         )
         
         # 全连接层
         self.fc = nn.Sequential(
-            nn.Linear(self.conv_output_size, 512),
+            nn.Linear(20*28*64, 512),
             nn.ReLU(),
-            nn.Dropout(0.2)  # 添加dropout防止过拟合
+            nn.Dropout(0.1)  # 添加dropout防止过拟合
         )
         
         # 策略网络输出层（Actor）
@@ -48,39 +36,10 @@ class PPO_Network(nn.Module):
         
         # 价值网络输出层（Critic）
         self.fc_v = nn.Linear(512, 1)  # 输出状态价值
-        
-        # 初始化权重
-        self._init_weights()
 
         # 将网络移动到指定设备
         self.to(device)
     
-    def _calculate_conv_output_size(self, obs_dim: Tuple[int, int]):
-        """计算卷积后的特征图大小"""
-        height, width = obs_dim
-        # 经过4次stride=2的卷积，特征图大小会缩小16倍
-        conv_height = height // 16
-        conv_width = width // 16
-        self.conv_output_size = 256 * conv_height * conv_width
-        # print(f"输入地图大小: {obs_dim}")
-        # print(f"卷积后特征图大小: {conv_height}x{conv_width}")
-        # print(f"展平后特征维度: {self.conv_output_size}")
-    
-    def _init_weights(self):
-        """初始化网络权重"""
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.xavier_uniform_(m.weight, gain=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, gain=0.01)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            # 特别初始化策略网络的标准差层
-            if isinstance(m, nn.Linear) and m == self.fc_std:
-                nn.init.constant_(m.weight, 0)
-                nn.init.constant_(m.bias, 0)
     
     def _extract_features(self, x):
         """
